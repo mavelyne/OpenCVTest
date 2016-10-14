@@ -25,6 +25,7 @@ import org.opencv.objdetect.CascadeClassifier;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.util.ArrayList;
 
 public class MainActivity extends Activity {
     private static int RESULT_LOAD_IMG = 1;
@@ -35,11 +36,10 @@ public class MainActivity extends Activity {
     private void initializeOpenCVDependencies() {
         try {
             // Copy the resource into a temp file so OpenCV can load it
-            InputStream is = getResources().openRawResource(R.raw.lbpcascade_frontalface);
+            InputStream is = getResources().openRawResource(R.raw.haarcascade_frontalface_default);
             File cascadeDir = getDir("cascade", Context.MODE_PRIVATE);
-            File mCascadeFile = new File(cascadeDir, "lbpcascade_frontalface.xml");
+            File mCascadeFile = new File(cascadeDir, "haarcascade_frontalface_default.xml");
             FileOutputStream os = new FileOutputStream(mCascadeFile);
-
 
             byte[] buffer = new byte[4096];
             int bytesRead;
@@ -49,9 +49,20 @@ public class MainActivity extends Activity {
             is.close();
             os.close();
 
-
             // Load the cascade classifier
+            // must construct object and use load function as said in http://stackoverflow.com/questions/34953704/opencv-fo-android-failed-to-load-cascade-classifier-error
             cascadeClassifier = new CascadeClassifier(mCascadeFile.getAbsolutePath());
+            cascadeClassifier.load(mCascadeFile.getAbsolutePath());
+            if(cascadeClassifier.empty())
+            {
+                Log.v("MyActivity","--(!)Error loading A\n");
+                return;
+            }
+            else {
+                Log.v("MyActivity",
+                        "Loaded cascade classifier from " + mCascadeFile.getAbsolutePath());
+            }
+
         } catch (Exception e) {
             Log.e("OpenCVActivity", "Error loading cascade", e);
         }
@@ -76,6 +87,12 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        if (!OpenCVLoader.initDebug()) {
+            // Handle initialization error
+            // Fixed Imgproc.rectangle not found
+            // From: http://stackoverflow.com/questions/11939192/unsatisfied-link-error-opencv-for-android-non-native
+            Log.v("My Activity","Error initializing opencv");
+        }
     }
 
     public void loadImagefromGallery(View view) {
@@ -117,24 +134,31 @@ public class MainActivity extends Activity {
 
                 // Create a grayscale image
                 Imgproc.cvtColor(imgMAT, grayImgMAT, Imgproc.COLOR_RGB2GRAY);
-
+                Imgproc.equalizeHist(grayImgMAT,grayImgMAT);
                 MatOfRect faces = new MatOfRect();
 
                 // The faces will be a 20% of the height of the screen
-                absoluteFaceSize = (int) (imgMAT.height() * 1);
+                absoluteFaceSize = (int) (imgMAT.height() * 0.2);
 
-                // Use the classifier to detect faces
-                if (cascadeClassifier != null) {
-                    cascadeClassifier.detectMultiScale(grayImgMAT, faces, 1.1, 2, 2,
-                            new Size(absoluteFaceSize, absoluteFaceSize), new Size());
+                for(double f = 0.1; f < 1.0; f += 0.1 ){
+                    // Use the classifier to detect faces
+                    if (cascadeClassifier != null && !cascadeClassifier.empty()) {
+                        cascadeClassifier.detectMultiScale(grayImgMAT, faces, 1.1, 2, 2,
+                                new Size(absoluteFaceSize, absoluteFaceSize), new Size());
+                    }
+
+                    // If there are any faces found, draw a rectangle around it
+                    Rect[] facesArray = faces.toArray();
+                    for (int i = 0; i <facesArray.length; i++) {
+                        Point pt1 = facesArray[i].tl();
+                        Point pt2 = facesArray[i].br();
+                        Scalar color = new Scalar(0, 255, 0, 255);
+                        Imgproc.rectangle(imgMAT, pt1, pt2, color);
+                    }
+
                 }
 
-                // If there are any faces found, draw a rectangle around it
-                Rect[] facesArray = faces.toArray();
-                for (int i = 0; i <facesArray.length; i++)
-                    Imgproc.rectangle(imgMAT, facesArray[i].tl(), facesArray[i].br(), new Scalar(0, 255, 0, 255), 3);
-
-                Utils.matToBitmap(grayImgMAT,bmp32);
+                Utils.matToBitmap(imgMAT,bmp32);
                 // Set the Image in ImageView after decoding the String
                 imgView.setImageBitmap(bmp32);
 
