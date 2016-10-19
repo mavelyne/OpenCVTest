@@ -36,9 +36,9 @@ public class MainActivity extends Activity {
     private void initializeOpenCVDependencies() {
         try {
             // Copy the resource into a temp file so OpenCV can load it
-            InputStream is = getResources().openRawResource(R.raw.haarcascade_frontalface_default);
+            InputStream is = getResources().openRawResource(R.raw.lbpcascade_frontalface);
             File cascadeDir = getDir("cascade", Context.MODE_PRIVATE);
-            File mCascadeFile = new File(cascadeDir, "haarcascade_frontalface_default.xml");
+            File mCascadeFile = new File(cascadeDir, "lbpcascade_frontalface.xml");
             FileOutputStream os = new FileOutputStream(mCascadeFile);
 
             byte[] buffer = new byte[4096];
@@ -143,7 +143,7 @@ public class MainActivity extends Activity {
                 for(double f = 0.1; f < 1.0; f += 0.1 ){
                     // Use the classifier to detect faces
                     if (cascadeClassifier != null && !cascadeClassifier.empty()) {
-                        cascadeClassifier.detectMultiScale(grayImgMAT, faces, 1.1, 2, 2,
+                        cascadeClassifier.detectMultiScale(imgMAT, faces, 1.1, 2, 2,
                                 new Size(absoluteFaceSize, absoluteFaceSize), new Size());
                     }
 
