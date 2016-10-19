@@ -7,18 +7,28 @@
     <ImageView
         android:id="@+id/imgView"
         android:layout_width="fill_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="fill_parent"
         android:layout_weight="1" >
     </ImageView>
 
     <Button
         android:id="@+id/buttonLoadPicture"
-        android:layout_width="fill_parent"
-        android:layout_height="wrap_content"
-        android:layout_gravity="center"
+        android:layout_gravity="bottom"
         android:layout_weight="0"
         android:onClick="loadImagefromGallery"
-        android:text="Load Picture" >
+        android:text="Load Picture"
+        android:layout_width="fill_parent"
+        android:layout_height="wrap_content">
     </Button>
+    <Button
+        android:id="@+id/buttonSavePicture"
+        android:layout_gravity="bottom"
+        android:layout_weight="0"
+        android:onClick="saveImageToGallery"
+        android:text="Save Picture"
+        android:layout_width="fill_parent"
+        android:layout_height="wrap_content">
+    </Button>
+
 
 </LinearLayout>

@@ -1,6 +1,7 @@
 package com.margret.opencvtest;
 
 import android.app.Activity;
+import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.database.Cursor;
@@ -8,6 +9,7 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Environment;
 import android.provider.MediaStore;
 import android.util.Log;
 import android.view.View;
@@ -29,9 +31,13 @@ import java.util.ArrayList;
 
 public class MainActivity extends Activity {
     private static int RESULT_LOAD_IMG = 1;
+    private static String DEFAULT_SAVE_NAME = "Censored";
+
     String imgDecodableString;
     private CascadeClassifier cascadeClassifier;
     private int absoluteFaceSize;
+    Bitmap currentImg = null;
+    String currentImgName = null;
 
     private void initializeOpenCVDependencies() {
         try {
@@ -103,15 +109,34 @@ public class MainActivity extends Activity {
         startActivityForResult(galleryIntent, RESULT_LOAD_IMG);
     }
 
+    public void saveImageToGallery(View view){
+        File filepath = Environment.getExternalStorageDirectory();
+        File dir = new File(filepath.getAbsolutePath() + "/Censored");
+        dir.mkdirs();
+        File file = new File(dir, DEFAULT_SAVE_NAME + "_" + currentImgName+".jpg");
+        try{
+            FileOutputStream out = new FileOutputStream(file);
+            currentImg.compress(Bitmap.CompressFormat.JPEG, 100, out);
+            out.flush();
+            out.close();;
+            ContentValues vals = new ContentValues();
+            vals.put(MediaStore.Images.Media.DATE_TAKEN, System.currentTimeMillis());
+            vals.put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
+            vals.put(MediaStore.MediaColumns.DATA, file.getAbsolutePath());
+            MainActivity.this.getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI,vals);
+        }catch (Exception e){
+            Log.v("SaveImageToGallery", "Failed to save image");
+        }
+    }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         try {
-            // When an Image is picked
+            // When an Image is picked from Loading
             if (requestCode == RESULT_LOAD_IMG && resultCode == RESULT_OK
                     && null != data) {
                 // Get the Image from data
-
                 Uri selectedImage = data.getData();
                 String[] filePathColumn = { MediaStore.Images.Media.DATA };
 
@@ -125,9 +150,12 @@ public class MainActivity extends Activity {
                 imgDecodableString = cursor.getString(columnIndex);
                 cursor.close();
                 ImageView imgView = (ImageView) findViewById(R.id.imgView);
-
+                File file = new File(imgDecodableString);
+                currentImgName = file.getName();
+                //Covert to bitmap and mat
                 Bitmap bmp32 = BitmapFactory.decodeFile(imgDecodableString)
                         .copy(Bitmap.Config.ARGB_8888, true);
+                currentImg = bmp32;
                 Mat imgMAT = new Mat(bmp32.getHeight(), bmp32.getWidth(), CvType.CV_8U, new Scalar(4));
                 Mat grayImgMAT = new Mat(bmp32.getHeight(), bmp32.getWidth(), CvType.CV_8UC4);
                 Utils.bitmapToMat(bmp32, imgMAT);
@@ -161,8 +189,8 @@ public class MainActivity extends Activity {
                 Utils.matToBitmap(imgMAT,bmp32);
                 // Set the Image in ImageView after decoding the String
                 imgView.setImageBitmap(bmp32);
-
-            } else {
+                this.currentImg = bmp32;
+            }else {
                 Toast.makeText(this, "You haven't picked Image",
                         Toast.LENGTH_LONG).show();
             }
