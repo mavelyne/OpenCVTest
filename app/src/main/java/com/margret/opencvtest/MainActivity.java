@@ -8,6 +8,7 @@ import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.net.Uri;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Environment;
 import android.provider.MediaStore;
@@ -27,14 +28,15 @@ import org.opencv.objdetect.CascadeClassifier;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
-import java.util.ArrayList;
+import java.lang.ref.WeakReference;
 
 public class MainActivity extends Activity {
     private static int RESULT_LOAD_IMG = 1;
     private static String DEFAULT_SAVE_NAME = "Censored";
 
     String imgDecodableString;
-    private CascadeClassifier cascadeClassifier;
+    private CascadeClassifier faceCascadeClassifier;
+    private CascadeClassifier smileCascadeClassifier;
     private int absoluteFaceSize;
     Bitmap currentImg = null;
     String currentImgName = null;
@@ -57,9 +59,9 @@ public class MainActivity extends Activity {
 
             // Load the cascade classifier
             // must construct object and use load function as said in http://stackoverflow.com/questions/34953704/opencv-fo-android-failed-to-load-cascade-classifier-error
-            cascadeClassifier = new CascadeClassifier(mCascadeFile.getAbsolutePath());
-            cascadeClassifier.load(mCascadeFile.getAbsolutePath());
-            if(cascadeClassifier.empty())
+            faceCascadeClassifier = new CascadeClassifier(mCascadeFile.getAbsolutePath());
+            faceCascadeClassifier.load(mCascadeFile.getAbsolutePath());
+            if(faceCascadeClassifier.empty())
             {
                 Log.v("MyActivity","--(!)Error loading A\n");
                 return;
@@ -68,6 +70,32 @@ public class MainActivity extends Activity {
                 Log.v("MyActivity",
                         "Loaded cascade classifier from " + mCascadeFile.getAbsolutePath());
             }
+
+            // Load smile classifier too
+            is = getResources().openRawResource(R.raw.lbpcascade_frontalface);
+            cascadeDir = getDir("cascade", Context.MODE_PRIVATE);
+            mCascadeFile = new File(cascadeDir, "lbpcascade_frontalface.xml");
+            os = new FileOutputStream(mCascadeFile);
+            while ((bytesRead = is.read(buffer)) != -1) {
+                os.write(buffer, 0, bytesRead);
+            }
+            is.close();
+            os.close();
+
+            // Load the cascade classifier
+            // must construct object and use load function as said in http://stackoverflow.com/questions/34953704/opencv-fo-android-failed-to-load-cascade-classifier-error
+            smileCascadeClassifier = new CascadeClassifier(mCascadeFile.getAbsolutePath());
+            smileCascadeClassifier.load(mCascadeFile.getAbsolutePath());
+            if(smileCascadeClassifier.empty())
+            {
+                Log.v("MyActivity","--(!)Error loading A\n");
+                return;
+            }
+            else {
+                Log.v("MyActivity",
+                        "Loaded cascade classifier from " + mCascadeFile.getAbsolutePath());
+            }
+
 
         } catch (Exception e) {
             Log.e("OpenCVActivity", "Error loading cascade", e);
@@ -149,47 +177,15 @@ public class MainActivity extends Activity {
                 int columnIndex = cursor.getColumnIndex(filePathColumn[0]);
                 imgDecodableString = cursor.getString(columnIndex);
                 cursor.close();
-                ImageView imgView = (ImageView) findViewById(R.id.imgView);
+
+
                 File file = new File(imgDecodableString);
                 currentImgName = file.getName();
-                //Covert to bitmap and mat
-                Bitmap bmp32 = BitmapFactory.decodeFile(imgDecodableString)
-                        .copy(Bitmap.Config.ARGB_8888, true);
-                currentImg = bmp32;
-                Mat imgMAT = new Mat(bmp32.getHeight(), bmp32.getWidth(), CvType.CV_8U, new Scalar(4));
-                Mat grayImgMAT = new Mat(bmp32.getHeight(), bmp32.getWidth(), CvType.CV_8UC4);
-                Utils.bitmapToMat(bmp32, imgMAT);
 
-                // Create a grayscale image
-                Imgproc.cvtColor(imgMAT, grayImgMAT, Imgproc.COLOR_RGB2GRAY);
-                Imgproc.equalizeHist(grayImgMAT,grayImgMAT);
-                MatOfRect faces = new MatOfRect();
+                ImageView imgView = (ImageView) findViewById(R.id.imgView);
+                ProcessImageTask task = new ProcessImageTask(imgView);
+                task.execute(imgDecodableString);
 
-                // The faces will be a 20% of the height of the screen
-                absoluteFaceSize = (int) (imgMAT.height() * 0.2);
-
-                for(double f = 0.1; f < 1.0; f += 0.1 ){
-                    // Use the classifier to detect faces
-                    if (cascadeClassifier != null && !cascadeClassifier.empty()) {
-                        cascadeClassifier.detectMultiScale(imgMAT, faces, 1.1, 2, 2,
-                                new Size(absoluteFaceSize, absoluteFaceSize), new Size());
-                    }
-
-                    // If there are any faces found, draw a rectangle around it
-                    Rect[] facesArray = faces.toArray();
-                    for (int i = 0; i <facesArray.length; i++) {
-                        Point pt1 = facesArray[i].tl();
-                        Point pt2 = facesArray[i].br();
-                        Scalar color = new Scalar(0, 255, 0, 255);
-                        Imgproc.rectangle(imgMAT, pt1, pt2, color);
-                    }
-
-                }
-
-                Utils.matToBitmap(imgMAT,bmp32);
-                // Set the Image in ImageView after decoding the String
-                imgView.setImageBitmap(bmp32);
-                this.currentImg = bmp32;
             }else {
                 Toast.makeText(this, "You haven't picked Image",
                         Toast.LENGTH_LONG).show();
@@ -205,6 +201,72 @@ public class MainActivity extends Activity {
     public void onResume() {
         super.onResume();
         OpenCVLoader.initAsync(OpenCVLoader.OPENCV_VERSION_2_4_6, this, mLoaderCallback);
+    }
+
+    /*
+        Use this asynchronous task to process the image.
+        Adapted from https://developer.android.com/training/displaying-bitmaps/process-bitmap.html
+     */
+    class ProcessImageTask extends AsyncTask<String, Void, Bitmap> {
+        private final WeakReference<ImageView> imageViewReference;
+
+        public ProcessImageTask(ImageView imageView) {
+            // Use a WeakReference to ensure the ImageView can be garbage collected
+            imageViewReference = new WeakReference<ImageView>(imageView);
+        }
+
+        // Decode image in background
+        @Override
+        protected Bitmap doInBackground(String... params) {
+            //Covert to bitmap and mat
+            Bitmap bmp32 = BitmapFactory.decodeFile(imgDecodableString)
+                    .copy(Bitmap.Config.ARGB_8888, true);
+
+            currentImg = bmp32;
+            Mat imgMAT = new Mat(bmp32.getHeight(), bmp32.getWidth(), CvType.CV_8U, new Scalar(4));
+            Mat grayImgMAT = new Mat(bmp32.getHeight(), bmp32.getWidth(), CvType.CV_8UC4);
+            Utils.bitmapToMat(bmp32, imgMAT);
+
+            // Create a grayscale image
+            Imgproc.cvtColor(imgMAT, grayImgMAT, Imgproc.COLOR_RGB2GRAY);
+            Imgproc.equalizeHist(grayImgMAT,grayImgMAT);
+            MatOfRect faces = new MatOfRect();
+
+            // The faces will be a 20% of the height of the screen
+            absoluteFaceSize = (int) (imgMAT.height() * 0.2);
+
+            for(double f = 0.1; f < 1.0; f += 0.1 ){
+                // Use the classifier to detect faces
+                if (faceCascadeClassifier != null && !faceCascadeClassifier.empty()) {
+                    faceCascadeClassifier.detectMultiScale(imgMAT, faces, 1.1, 2, 2,
+                            new Size(absoluteFaceSize, absoluteFaceSize), new Size());
+                }
+
+                // If there are any faces found, draw a rectangle around it
+                Rect[] facesArray = faces.toArray();
+                for (int i = 0; i <facesArray.length; i++) {
+                    Point pt1 = facesArray[i].tl();
+                    Point pt2 = facesArray[i].br();
+                    Scalar color = new Scalar(0, 255, 0, 255);
+                    Imgproc.rectangle(imgMAT, pt1, pt2, color);
+                }
+
+            }
+
+            Utils.matToBitmap(imgMAT,bmp32);
+            return bmp32;
+        }
+
+        // Once complete, see if ImageView is still around and set bitmap.
+        @Override
+        protected void onPostExecute(Bitmap bitmap) {
+            if (imageViewReference != null && bitmap != null) {
+                final ImageView imageView = imageViewReference.get();
+                if (imageView != null) {
+                    imageView.setImageBitmap(bitmap);
+                }
+            }
+        }
     }
 
 }
