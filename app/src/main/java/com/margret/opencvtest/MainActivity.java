@@ -45,8 +45,7 @@ public class MainActivity extends Activity {
     String imgDecodableString;
     private CascadeClassifier faceCascadeClassifier;
     private CascadeClassifier smileCascadeClassifier;
-    private int absoluteFaceSize;
-    private int absoluteSmileSize;
+    private CascadeClassifier eyeCascadeClassifier;
     Bitmap currentImg = null;
     String currentImgName = null;
     /**
@@ -84,7 +83,7 @@ public class MainActivity extends Activity {
             }
 
             // Load smile classifier too
-            is = getResources().openRawResource(R.raw.lbpcascade_frontalface);
+            is = getResources().openRawResource(R.raw.haarcascade_smile);
             cascadeDir = getDir("cascade", Context.MODE_PRIVATE);
             mCascadeFile = new File(cascadeDir, "haarcascade_smile.xml");
             os = new FileOutputStream(mCascadeFile);
@@ -105,6 +104,30 @@ public class MainActivity extends Activity {
                 Log.v("MyActivity",
                         "Loaded cascade classifier from " + mCascadeFile.getAbsolutePath());
             }
+
+            // Load eye classifier too
+            is = getResources().openRawResource(R.raw.haarcascade_eye);
+            cascadeDir = getDir("cascade", Context.MODE_PRIVATE);
+            mCascadeFile = new File(cascadeDir, "haarcascade_eye.xml");
+            os = new FileOutputStream(mCascadeFile);
+            while ((bytesRead = is.read(buffer)) != -1) {
+                os.write(buffer, 0, bytesRead);
+            }
+            is.close();
+            os.close();
+
+            // Load the cascade classifier
+            // must construct object and use load function as said in http://stackoverflow.com/questions/34953704/opencv-fo-android-failed-to-load-cascade-classifier-error
+            eyeCascadeClassifier = new CascadeClassifier(mCascadeFile.getAbsolutePath());
+            eyeCascadeClassifier.load(mCascadeFile.getAbsolutePath());
+            if (eyeCascadeClassifier.empty()) {
+                Log.v("MyActivity", "--(!)Error loading A\n");
+                return;
+            } else {
+                Log.v("MyActivity",
+                        "Loaded cascade classifier from " + mCascadeFile.getAbsolutePath());
+            }
+
 
 
         } catch (Exception e) {
@@ -286,47 +309,107 @@ public class MainActivity extends Activity {
             Imgproc.equalizeHist(grayImgMAT, grayImgMAT);
             MatOfRect faces = new MatOfRect();
 
-            // The faces will be a 20% of the height of the screen
-            absoluteFaceSize = (int) (imgMAT.height() * 0.2);
-            absoluteSmileSize = absoluteFaceSize / 2;
+            // The faces will be a bounded percentage of the height of the screen
+            int minFaceSize = (int) (imgMAT.height() * 0.10);
+            //adjust min face size until at least one face is found or limit reached
+            for(double percentage = 0.10; percentage < 0.90  && faces.empty(); percentage += 0.5){
+                minFaceSize = (int) (imgMAT.height() * percentage);
+                // Use the classifier to detect faces
+                if (faceCascadeClassifier != null && !faceCascadeClassifier.empty()) {
+                    faceCascadeClassifier.detectMultiScale(imgMAT, faces, 1.1, 2, 2,
+                            new Size(minFaceSize, minFaceSize), new Size());
+                }
 
-            // Use the classifier to detect faces
-            if (faceCascadeClassifier != null && !faceCascadeClassifier.empty()) {
-                faceCascadeClassifier.detectMultiScale(imgMAT, faces, 1.1, 2, 2,
-                        new Size(absoluteFaceSize, absoluteFaceSize), new Size());
             }
+
+            int minSmileSize = minFaceSize / 8;
+            int minEyeSize = 2;
 
             MatOfRect smiles = new MatOfRect();
             // Use the classifier to detect smiles
             if (smileCascadeClassifier != null && !smileCascadeClassifier.empty()) {
                 smileCascadeClassifier.detectMultiScale(imgMAT, smiles, 1.1, 2, 2,
-                        new Size(absoluteSmileSize, absoluteSmileSize), new Size());
+                        new Size(minSmileSize, minSmileSize), new Size(minFaceSize,minFaceSize/2));
+            }
+
+            MatOfRect eyes = new MatOfRect();
+            // Use the classifier to detect eyes
+            if (eyeCascadeClassifier != null && !eyeCascadeClassifier.empty()) {
+                eyeCascadeClassifier.detectMultiScale(imgMAT, eyes, 1.1, 2, 2,
+                        new Size(minEyeSize, minEyeSize), new Size(minFaceSize,minFaceSize));
             }
 
             // If there are any faces found, draw a rectangle around it
             List<Rect> facesList = new ArrayList<Rect>(faces.toList());
             List<Rect> smilesList = new ArrayList<Rect>(smiles.toList());
-            facesList.addAll(smilesList);
+            List<Rect> eyesList = new ArrayList<Rect>(eyes.toList());
+
+            //filter faces out that don't contain an eye
+            List<Rect> temp = new ArrayList<>();
+            for(Rect face : facesList){
+                boolean hasEye = false;
+                for(Rect eye : eyesList){
+                    if(face.contains(eye.br()) &&
+                            face.contains(eye.tl())){
+                        hasEye = true;
+                    }
+                }
+                if(hasEye){
+                    temp.add(face);
+                }
+            }
+            facesList = temp;
+
+            if(facesList.isEmpty()){
+                Log.v("Looking for Faces", "No faces found");
+                return bmp32;
+            }
+
+            //isolate largest face
             Collections.sort(facesList, new RectSizeComparator());
             Collections.reverse(facesList);
             Rect largest = facesList.remove(0);
             Point center = new Point(largest.x+largest.width/2,largest.y+largest.height/2);
-            Imgproc.rectangle(imgMAT, largest.tl(), largest.br(), new Scalar(255,0,0));
+
             for (Rect face : facesList) {
-                if(!face.contains(largest.br())
-                        && !face.contains(largest.tl())
-                        && ! face.contains(center)){
-                    Point pt1 = face.tl();
-                    Point pt2 = face.br();
-                    Scalar color = new Scalar(0, 0, 255, 255);
-                    Imgproc.rectangle(imgMAT, pt1, pt2, color);
-                    // blur the face
+                if(!face.contains(center)){
+
+                    //blur the face until eyes cannot be recognized
                     Mat submat = imgMAT.submat(face);
-                    Imgproc.blur(submat,submat,new Size(10,10));
+                    int winsize = 10;
+                    MatOfRect foundEyes = new MatOfRect();
+                    do{
+                        Imgproc.blur(submat,submat,new Size(winsize,winsize));
+                        minEyeSize = (int) (submat.height() * 0.01);
+                        int maxEyeSize = (int) (submat.height() * 0.5);
+                        // Use the classifier to detect eyes
+                        if (eyeCascadeClassifier != null && !eyeCascadeClassifier.empty()) {
+                            eyeCascadeClassifier.detectMultiScale(submat, foundEyes, 1.1, 2, 2,
+                                    new Size(minEyeSize, minEyeSize), new Size(maxEyeSize,maxEyeSize));
+                        }
+
+                    }while(!foundEyes.empty());
                 }
             }
 
+            /*
+            // DEBUG: Box objects by type
+            List<Rect> allObj = new ArrayList<>(facesList);
+            allObj.addAll(smilesList); allObj.addAll(eyesList);
+            for(Rect obj : allObj){
+                Scalar color = new Scalar(255,0,0);
+                if(eyesList.contains(obj)) color = new Scalar(0,255,0);
+                if(smilesList.contains(obj)) color = new Scalar(0,0,255);
+                Point pt1 = obj.tl();
+                Point pt2 = obj.br();
+                Imgproc.rectangle(imgMAT, pt1, pt2, color);
+            }
+            */
+
             Utils.matToBitmap(imgMAT, bmp32);
+
+            //release native resources
+            imgMAT.release();
             return bmp32;
         }
 
