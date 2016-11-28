@@ -311,15 +311,15 @@ public class MainActivity extends Activity {
 
             // The faces will be a bounded percentage of the height of the screen
             int minFaceSize = (int) (imgMAT.height() * 0.10);
+            double percentage = 0.10;
             //adjust min face size until at least one face is found or limit reached
-            for(double percentage = 0.10; percentage < 0.90  && faces.empty(); percentage += 0.5){
+            for(; percentage < 0.90  && faces.empty(); percentage += 0.5){
                 minFaceSize = (int) (imgMAT.height() * percentage);
                 // Use the classifier to detect faces
                 if (faceCascadeClassifier != null && !faceCascadeClassifier.empty()) {
                     faceCascadeClassifier.detectMultiScale(imgMAT, faces, 1.1, 2, 2,
-                            new Size(minFaceSize, minFaceSize), new Size());
+                            new Size(minFaceSize, minFaceSize), new Size(imgMAT.height(), imgMAT.width()));
                 }
-
             }
 
             int minSmileSize = minFaceSize / 8;
@@ -339,7 +339,7 @@ public class MainActivity extends Activity {
                         new Size(minEyeSize, minEyeSize), new Size(minFaceSize,minFaceSize));
             }
 
-            // If there are any faces found, draw a rectangle around it
+            //Turn MatOfRect to Lists
             List<Rect> facesList = new ArrayList<Rect>(faces.toList());
             List<Rect> smilesList = new ArrayList<Rect>(smiles.toList());
             List<Rect> eyesList = new ArrayList<Rect>(eyes.toList());
