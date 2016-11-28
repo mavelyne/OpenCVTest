@@ -311,26 +311,21 @@ public class MainActivity extends Activity {
 
             // The faces will be a bounded percentage of the height of the screen
             int minFaceSize = (int) (imgMAT.height() * 0.10);
-            double percentage = 0.10;
-            //adjust min face size until at least one face is found or limit reached
-            for(; percentage < 0.90  && faces.empty(); percentage += 0.5){
-                minFaceSize = (int) (imgMAT.height() * percentage);
-                // Use the classifier to detect faces
-                if (faceCascadeClassifier != null && !faceCascadeClassifier.empty()) {
-                    faceCascadeClassifier.detectMultiScale(imgMAT, faces, 1.1, 2, 2,
-                            new Size(minFaceSize, minFaceSize), new Size(imgMAT.height(), imgMAT.width()));
-                }
+            if (faceCascadeClassifier != null && !faceCascadeClassifier.empty()) {
+                faceCascadeClassifier.detectMultiScale(imgMAT, faces, 1.1, 2, 2,
+                        new Size(2, 2), new Size(imgMAT.height(), imgMAT.width()));
             }
-
             int minSmileSize = minFaceSize / 8;
             int minEyeSize = 2;
 
+            /*
             MatOfRect smiles = new MatOfRect();
             // Use the classifier to detect smiles
             if (smileCascadeClassifier != null && !smileCascadeClassifier.empty()) {
                 smileCascadeClassifier.detectMultiScale(imgMAT, smiles, 1.1, 2, 2,
                         new Size(minSmileSize, minSmileSize), new Size(minFaceSize,minFaceSize/2));
             }
+            */
 
             MatOfRect eyes = new MatOfRect();
             // Use the classifier to detect eyes
@@ -341,7 +336,7 @@ public class MainActivity extends Activity {
 
             //Turn MatOfRect to Lists
             List<Rect> facesList = new ArrayList<Rect>(faces.toList());
-            List<Rect> smilesList = new ArrayList<Rect>(smiles.toList());
+            //List<Rect> smilesList = new ArrayList<Rect>(smiles.toList());
             List<Rect> eyesList = new ArrayList<Rect>(eyes.toList());
 
             //filter faces out that don't contain an eye
